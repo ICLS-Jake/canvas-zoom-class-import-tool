@@ -59,11 +59,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Successful: {success_count}")
         print(f"Dry run: {dry_run_count}")
         print(f"Failed: {failed_count}")
+        if failed_count:
+            print("Failure details:")
+            for result in results:
+                if result.status != "failed":
+                    continue
+                error_code = result.error_code or "UNKNOWN"
+                error_message = result.error_message or "No error message provided."
+                print(f"- Row {result.row_number} [{error_code}] {error_message}")
         print(f"Report: {report_path}")
 
         return 1 if failed_count else 0
     except AppError as exc:
         logging.error("%s", exc)
+        print(f"Error: [{exc.code}] {exc.message}", file=sys.stderr)
         return 1
 
 
