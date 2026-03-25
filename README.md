@@ -12,7 +12,7 @@ The script is designed for batch work and includes retries, timeout handling, pa
 ## Files
 
 - Main entry point: `python -m canvas_zoom_course_setup`
-- Example environment file: `.env.example`
+- Environment file: `.env` (create this file manually in the repo root)
 - Example input CSV: `sample-input/course_shells_example.csv`
 
 ## Prerequisites
@@ -46,7 +46,7 @@ The script is designed for batch work and includes retries, timeout handling, pa
 python -m pip install -r requirements.txt
 ```
 
-3. Copy `.env.example` to `.env` and fill in the secrets.
+3. Create a `.env` file in the repository root and fill in the required secrets.
 4. Configure a Zoom Server-to-Server OAuth app for post-creation meeting reads:
    - In Zoom App Marketplace, create a **Server-to-Server OAuth** app (not a user-managed OAuth app).
    - Install/authorize it for the same Zoom account that owns the meeting host user.
