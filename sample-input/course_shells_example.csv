@@ -1,0 +1,3 @@
+Live Course ID,Master Course ID,Course Start Date,Course End Date,Course Days,Coordinator User IDs,Meeting Start Time,Meeting Duration Minutes,Meeting Timezone,LTI Context ID,Meeting Topic,Zoom Host User ID
+12345,54321,2026-05-04,2026-08-12,Mon/Wed,"2001;2002",18:00,120,America/Denver,,ENG-101 Live Session,instructor@example.edu
+12346,54322,2026-05-05,2026-08-13,Tue/Thur,2003,18:00,120,America/Denver,,ENG-102 Live Session,instructor@example.edu
