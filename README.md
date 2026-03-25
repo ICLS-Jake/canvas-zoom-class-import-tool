@@ -12,7 +12,7 @@ The script is designed for batch work and includes retries, timeout handling, pa
 ## Files
 
 - Main entry point: `python -m canvas_zoom_course_setup`
-- Example environment file: `.env.example`
+- Environment file: `.env` (create this file manually in the repo root)
 - Example input CSV: `sample-input/course_shells_example.csv`
 
 ## Prerequisites
@@ -28,7 +28,6 @@ The script is designed for batch work and includes retries, timeout handling, pa
   - `ZOOM_LTI_KEY`
   - `ZOOM_LTI_SECRET`
   - a host `userId` or email for meeting creation
-- Zoom Server-to-Server OAuth app with scopes that can read meetings after creation.
 
 ## Important operational notes
 
@@ -47,9 +46,14 @@ The script is designed for batch work and includes retries, timeout handling, pa
 python -m pip install -r requirements.txt
 ```
 
-3. Copy `.env.example` to `.env` and fill in the secrets.
-4. Prepare your CSV.
-5. Run a dry run first.
+3. Create a `.env` file in the repository root and fill in the required secrets.
+4. Configure a Zoom Server-to-Server OAuth app for post-creation meeting reads:
+   - In Zoom App Marketplace, create a **Server-to-Server OAuth** app (not a user-managed OAuth app).
+   - Install/authorize it for the same Zoom account that owns the meeting host user.
+   - Grant API scopes that allow this tool to fetch meeting details immediately after `createAndAssociate` (for example, read access to meeting endpoints such as `GET /meetings/{meetingId}` or `GET /users/{userId}/meetings`).
+   - This follow-up read is how the script captures join URL and passcode for homepage placeholder replacement and reporting.
+5. Prepare your CSV.
+6. Run a dry run first.
 
 ## CSV format
 
