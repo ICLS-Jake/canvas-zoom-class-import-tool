@@ -125,4 +125,7 @@ def _get_timezone(timezone_name: str) -> ZoneInfo:
     try:
         return ZoneInfo(timezone_name)
     except ZoneInfoNotFoundError as exc:
-        raise AppError("SCH002", f"Unknown IANA timezone '{timezone_name}'.") from exc
+        raise AppError(
+            "SCH002",
+            f"Unknown IANA timezone '{timezone_name}'. If this is a Windows environment, install the 'tzdata' package.",
+        ) from exc
