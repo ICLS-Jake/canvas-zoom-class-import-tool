@@ -101,8 +101,10 @@ class CourseShellSetupService:
         )
         warnings = summarize_migration_issues(issues)
 
+        configured_host = row.zoom_host_user_id or self.config.zoom_lti_host_user_id
+        resolved_host_user_id = self.zoom.resolve_lti_host_user_id(configured_host)
         meeting_id = self.zoom_lti.create_and_associate(
-            host_user_id=row.zoom_host_user_id or self.config.zoom_lti_host_user_id,
+            host_user_id=resolved_host_user_id,
             context_id=lti_context_id,
             domain=self.config.canvas_domain,
             course_id=live_course.canvas_id,

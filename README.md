@@ -27,7 +27,7 @@ The script is designed for batch work and includes retries, timeout handling, pa
 - Zoom LTI Pro credentials:
   - `ZOOM_LTI_KEY`
   - `ZOOM_LTI_SECRET`
-  - a host `userId` or email for meeting creation
+  - `ZOOM_LTI_HOST_USER_ID` (preferred: host email; the script resolves it to Zoom user ID automatically)
 
 ## Important operational notes
 
@@ -75,6 +75,9 @@ CANVAS_NOTIFY_COORDINATORS=false
 CANVAS_NOTIFY_HOMEPAGE_UPDATE=false
 ZOOM_LTI_BASE_URL=https://applications.zoom.us/api/v1/lti/rich
 ZOOM_LTI_DEBUG_SIGNATURE_BASE_STRING=false
+ZOOM_LTI_SIGNATURE_USE_URLSAFE_BASE64=true
+ZOOM_LTI_SIGNATURE_STRIP_PADDING=true
+ZOOM_LTI_SIGNATURE_PARAM_ORDER=key,timestamp,userId
 ZOOM_OAUTH_BASE_URL=https://zoom.us
 ZOOM_API_BASE_URL=https://api.zoom.us/v2
 DEFAULT_MEETING_START_TIME=18:00
@@ -93,6 +96,7 @@ REPORT_DIRECTORY=reports
    - In Zoom App Marketplace, create a **Server-to-Server OAuth** app (not a user-managed OAuth app).
    - Install/authorize it for the same Zoom account that owns the meeting host user.
    - Grant API scopes that allow this tool to fetch meeting details immediately after `createAndAssociate` (for example, read access to meeting endpoints such as `GET /meetings/{meetingId}` or `GET /users/{userId}/meetings`).
+   - Include user-read access (for example `GET /users/{email}`), because host emails are resolved to Zoom user IDs before calling `createAndAssociate`.
    - This follow-up read is how the script captures join URL and passcode for homepage placeholder replacement and reporting.
 5. Prepare your CSV (default file: `canvas_zoom_import_courses.csv`), and optionally add launch payload files if Canvas omits `lti_context_id`:
    - Set `LTI_LAUNCH_PAYLOADS_DIRECTORY` to a directory containing per-course payload files.
@@ -128,6 +132,7 @@ Notes:
 - Dates support `YYYY-MM-DD`, but using `YYYY-MM-DD` is strongly recommended.
 - Timezones should use IANA names such as `America/Denver`.
 - Canvas course identifiers can be internal IDs. If your Canvas instance allows SIS-style identifiers such as `sis_course_id:ABC123`, the script resolves the course first and then uses the real Canvas course ID for downstream actions.
+- `Zoom Host User ID` accepts either a Zoom user ID or an email. Email is preferred; the script resolves it to a Zoom user ID automatically and caches the result for the run.
 
 ## Placeholder setup
 
@@ -165,6 +170,12 @@ Useful flags:
 - `--report-path .\reports\my-run.csv`
 - `--log-level DEBUG`
 
+Zoom LTI signature troubleshooting helper:
+
+```powershell
+python -m canvas_zoom_course_setup.lti_signature_debug_helper --key <LTI_KEY> --timestamp <TIMESTAMP_MS> --user-id <USER_ID> --secret <LTI_SECRET>
+```
+
 ## Output
 
 Each run writes a CSV report with:
@@ -194,6 +205,7 @@ Default report location: `reports/course-shell-setup-YYYYMMDD-HHMMSS.csv`
 - `ZLT...`: Zoom LTI meeting creation or association failed
 - `ZOM401`: Zoom OAuth token request failed
 - `ZOM404`: Zoom meeting lookup failed
+- `ZOM409`: Zoom host email could not be resolved to a Zoom user ID
 - `PGE...`: homepage/front-page issue
 
 ## Testing
