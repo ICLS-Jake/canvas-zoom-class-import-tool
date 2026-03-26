@@ -25,6 +25,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report-path", help="Optional explicit CSV report path.")
     parser.add_argument("--dry-run", action="store_true", help="Validate configuration and inputs without writing changes.")
     parser.add_argument(
+        "--zoom-only",
+        action="store_true",
+        help="Skip Canvas content import and coordinator enrollment. This is useful for quickly testing only the Zoom/LTI + homepage update flow.",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -52,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         service = CourseShellSetupService(config)
-        results = service.run(rows, workers=workers, dry_run=args.dry_run)
+        results = service.run(rows, workers=workers, dry_run=args.dry_run, zoom_only=args.zoom_only)
         write_report(report_path, results)
 
         success_count = sum(1 for result in results if result.status == "success")

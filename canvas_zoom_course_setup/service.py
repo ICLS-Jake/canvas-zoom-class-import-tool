@@ -27,10 +27,10 @@ class CourseShellSetupService:
         self.zoom = ZoomClient(config)
         self.zoom_lti = ZoomLTIClient(config)
 
-    def run(self, rows: list[CourseShellRow], *, workers: int, dry_run: bool) -> list[CourseResult]:
+    def run(self, rows: list[CourseShellRow], *, workers: int, dry_run: bool, zoom_only: bool = False) -> list[CourseResult]:
         results: list[CourseResult] = []
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="course-shell") as executor:
-            future_map = {executor.submit(self.process_row, row, dry_run): row for row in rows}
+            future_map = {executor.submit(self.process_row, row, dry_run, zoom_only): row for row in rows}
             for future in as_completed(future_map):
                 row = future_map[future]
                 try:
@@ -59,11 +59,11 @@ class CourseShellSetupService:
                 results.append(result)
         return sorted(results, key=lambda item: item.row_number)
 
-    def process_row(self, row: CourseShellRow, dry_run: bool) -> CourseResult:
+    def process_row(self, row: CourseShellRow, dry_run: bool, zoom_only: bool = False) -> CourseResult:
         started_at = time.perf_counter()
         live_course = self.canvas.get_course(row.live_course_id, include_lti_context_id=True)
         master_course = self.canvas.get_course(row.master_course_id, include_lti_context_id=False)
-        role = self.canvas.resolve_coordinator_role()
+        role = None if zoom_only else self.canvas.resolve_coordinator_role()
         lti_context_id = self._resolve_lti_context_id(live_course, row)
         if not lti_context_id:
             raise AppError(
@@ -75,6 +75,16 @@ class CourseShellSetupService:
 
         if dry_run:
             elapsed = time.perf_counter() - started_at
+            action_summary = (
+                f"Would create Zoom meeting starting {meeting_plan.first_occurrence_at.isoformat()} and update homepage placeholders."
+            )
+            if zoom_only:
+                warning_text = f"{action_summary} Canvas content copy and coordinator enrollment would be skipped (--zoom-only)."
+            else:
+                warning_text = (
+                    f"Would copy content, enroll {len(row.coordinator_user_ids)} coordinator(s), create Zoom meeting starting "
+                    f"{meeting_plan.first_occurrence_at.isoformat()}"
+                )
             return CourseResult(
                 row_number=row.row_number,
                 live_course_identifier=row.live_course_id,
@@ -83,23 +93,31 @@ class CourseShellSetupService:
                 master_canvas_course_id=str(master_course.canvas_id),
                 course_name=live_course.name,
                 status="dry_run",
-                warnings=f"Would copy content, enroll {len(row.coordinator_user_ids)} coordinator(s), create Zoom meeting starting {meeting_plan.first_occurrence_at.isoformat()}",
+                warnings=warning_text,
                 elapsed_seconds=elapsed,
             )
 
-        LOGGER.info("Row %s: starting content copy for Canvas course %s", row.row_number, live_course.canvas_id)
-        migration = self.canvas.start_content_copy(live_course.canvas_id, master_course.canvas_id)
+        warnings = ""
+        if zoom_only:
+            LOGGER.info(
+                "Row %s: skipping Canvas content copy and coordinator enrollment (--zoom-only).",
+                row.row_number,
+            )
+            warnings = "Skipped Canvas content copy and coordinator enrollment (--zoom-only)."
+        else:
+            LOGGER.info("Row %s: starting content copy for Canvas course %s", row.row_number, live_course.canvas_id)
+            migration = self.canvas.start_content_copy(live_course.canvas_id, master_course.canvas_id)
 
-        for coordinator_user_id in row.coordinator_user_ids:
-            self.canvas.enroll_user(live_course.canvas_id, coordinator_user_id, role)
+            for coordinator_user_id in row.coordinator_user_ids:
+                self.canvas.enroll_user(live_course.canvas_id, coordinator_user_id, role)
 
-        migration_id = int(migration["id"])
-        issues = self.canvas.wait_for_content_copy(
-            live_course.canvas_id,
-            migration_id,
-            str(migration["progress_url"]),
-        )
-        warnings = summarize_migration_issues(issues)
+            migration_id = int(migration["id"])
+            issues = self.canvas.wait_for_content_copy(
+                live_course.canvas_id,
+                migration_id,
+                str(migration["progress_url"]),
+            )
+            warnings = summarize_migration_issues(issues)
 
         configured_host = row.zoom_host_user_id or self.config.zoom_lti_host_user_id
         resolved_host_user_id = self.zoom.resolve_lti_host_user_id(configured_host)
