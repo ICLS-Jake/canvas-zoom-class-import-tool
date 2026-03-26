@@ -169,6 +169,7 @@ Useful flags:
 - `--workers 6`
 - `--report-path .\reports\my-run.csv`
 - `--log-level DEBUG`
+- `--zoom-only` (skips Canvas content copy + coordinator enrollment so you can quickly test Zoom/LTI + homepage updates)
 
 Zoom LTI signature troubleshooting helper:
 
