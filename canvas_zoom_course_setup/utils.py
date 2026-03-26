@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import copy
+import json
 import hashlib
 import hmac
+from base64 import urlsafe_b64decode
 from base64 import urlsafe_b64encode
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -78,9 +80,32 @@ def replace_homepage_placeholders(
 
 
 def build_lti_signature(secret: str, parts: list[tuple[str, str]]) -> str:
-    base_string = "&".join(f"{key}={value}" for key, value in parts)
+    base_string = build_lti_signature_base_string(parts)
     digest = hmac.new(secret.encode("utf-8"), base_string.encode("utf-8"), hashlib.sha1).digest()
     return urlsafe_b64encode(digest).decode("utf-8").rstrip("=")
+
+
+def build_lti_signature_base_string(parts: list[tuple[str, str]]) -> str:
+    return "&".join(f"{key}={value}" for key, value in parts)
+
+
+def extract_lti_context_id_from_launch_payload_text(payload_text: str) -> str | None:
+    raw = payload_text.strip()
+    if not raw:
+        return None
+
+    if raw.startswith("{"):
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        return _extract_lti_context_id_from_payload_object(payload)
+
+    if "." in raw:
+        jwt_payload = _decode_unverified_jwt_payload(raw)
+        if jwt_payload is not None:
+            return _extract_lti_context_id_from_payload_object(jwt_payload)
+    return None
 
 
 def summarize_migration_issues(issues: list[dict]) -> str:
@@ -92,6 +117,45 @@ def summarize_migration_issues(issues: list[dict]) -> str:
         if description:
             summaries.append(f"{issue_type}/{state}: {description}")
     return " | ".join(summaries)
+
+
+def _extract_lti_context_id_from_payload_object(payload: object) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+
+    context_claim = payload.get("https://purl.imsglobal.org/spec/lti/claim/context")
+    if isinstance(context_claim, dict):
+        context_id = str(context_claim.get("id", "")).strip()
+        if context_id:
+            return context_id
+
+    context = payload.get("context")
+    if isinstance(context, dict):
+        context_id = str(context.get("id", "")).strip()
+        if context_id:
+            return context_id
+
+    id_token = payload.get("id_token")
+    if isinstance(id_token, str):
+        nested_payload = _decode_unverified_jwt_payload(id_token)
+        if nested_payload is not None:
+            return _extract_lti_context_id_from_payload_object(nested_payload)
+
+    return None
+
+
+def _decode_unverified_jwt_payload(token: str) -> dict | None:
+    parts = token.split(".")
+    if len(parts) < 2:
+        return None
+    payload_segment = parts[1]
+    padding = "=" * (-len(payload_segment) % 4)
+    try:
+        decoded = urlsafe_b64decode((payload_segment + padding).encode("utf-8")).decode("utf-8")
+        loaded = json.loads(decoded)
+    except (ValueError, UnicodeDecodeError):
+        return None
+    return loaded if isinstance(loaded, dict) else None
 
 
 def _render_topic(template: str, row: CourseShellRow, course: CanvasCourse) -> str:
@@ -125,4 +189,7 @@ def _get_timezone(timezone_name: str) -> ZoneInfo:
     try:
         return ZoneInfo(timezone_name)
     except ZoneInfoNotFoundError as exc:
-        raise AppError("SCH002", f"Unknown IANA timezone '{timezone_name}'.") from exc
+        raise AppError(
+            "SCH002",
+            f"Unknown IANA timezone '{timezone_name}'. If this is a Windows environment, install the 'tzdata' package.",
+        ) from exc
