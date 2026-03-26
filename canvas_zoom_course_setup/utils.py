@@ -130,6 +130,29 @@ def extract_lti_context_id_from_launch_payload_text(payload_text: str) -> str | 
     return None
 
 
+def build_lti_signature_base_string(parts: list[tuple[str, str]]) -> str:
+    return "&".join(f"{key}={value}" for key, value in parts)
+
+
+def extract_lti_context_id_from_launch_payload_text(payload_text: str) -> str | None:
+    raw = payload_text.strip()
+    if not raw:
+        return None
+
+    if raw.startswith("{"):
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        return _extract_lti_context_id_from_payload_object(payload)
+
+    if "." in raw:
+        jwt_payload = _decode_unverified_jwt_payload(raw)
+        if jwt_payload is not None:
+            return _extract_lti_context_id_from_payload_object(jwt_payload)
+    return None
+
+
 def summarize_migration_issues(issues: list[dict]) -> str:
     summaries: list[str] = []
     for issue in issues:
