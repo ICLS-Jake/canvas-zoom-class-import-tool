@@ -372,7 +372,7 @@ class ZoomLTIClient:
         response = self.http.request(
             "POST",
             "/meeting/createAndAssociate",
-            params={"key": self.config.zoom_lti_key, "timestamp": timestamp},
+            params={"key": self.config.zoom_lti_key, "timestamp": timestamp, "userId": host_user_id},
             headers={"X-Lti-Signature": signature},
             json_body={
                 "userId": host_user_id,
