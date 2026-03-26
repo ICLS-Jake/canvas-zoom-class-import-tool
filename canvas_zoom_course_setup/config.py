@@ -30,6 +30,8 @@ ALLOWED_BASE_ROLE_TYPES = {
 
 @dataclass(frozen=True)
 class AppConfig:
+    csv_file_path: str
+    lti_launch_payloads_directory: str | None
     canvas_base_url: str
     canvas_domain: str
     canvas_api_token: str
@@ -48,6 +50,10 @@ class AppConfig:
     zoom_lti_key: str
     zoom_lti_secret: str
     zoom_lti_host_user_id: str
+    zoom_lti_debug_signature_base_string: bool
+    zoom_lti_signature_use_urlsafe_base64: bool
+    zoom_lti_signature_strip_padding: bool
+    zoom_lti_signature_param_order: str
     zoom_oauth_base_url: str
     zoom_api_base_url: str
     zoom_oauth_client_id: str
@@ -102,6 +108,8 @@ def load_config(env_file: Path | None) -> AppConfig:
         meeting_settings.update(parsed)
 
     return AppConfig(
+        csv_file_path=_optional("CSV_FILE_PATH", "canvas_zoom_import_courses.csv"),
+        lti_launch_payloads_directory=_blank_to_none(_optional("LTI_LAUNCH_PAYLOADS_DIRECTORY")),
         canvas_base_url=canvas_base_url,
         canvas_domain=canvas_domain,
         canvas_api_token=_require("CANVAS_API_TOKEN"),
@@ -124,6 +132,12 @@ def load_config(env_file: Path | None) -> AppConfig:
         zoom_lti_key=_require("ZOOM_LTI_KEY"),
         zoom_lti_secret=_require("ZOOM_LTI_SECRET"),
         zoom_lti_host_user_id=_require("ZOOM_LTI_HOST_USER_ID"),
+        zoom_lti_debug_signature_base_string=_as_bool("ZOOM_LTI_DEBUG_SIGNATURE_BASE_STRING", False),
+        zoom_lti_signature_use_urlsafe_base64=_as_bool("ZOOM_LTI_SIGNATURE_USE_URLSAFE_BASE64", True),
+        zoom_lti_signature_strip_padding=_as_bool("ZOOM_LTI_SIGNATURE_STRIP_PADDING", True),
+        zoom_lti_signature_param_order=_as_signature_param_order(
+            _optional("ZOOM_LTI_SIGNATURE_PARAM_ORDER", "key,timestamp,userId")
+        ),
         zoom_oauth_base_url=_normalize_url(_optional("ZOOM_OAUTH_BASE_URL", "https://zoom.us")),
         zoom_api_base_url=_normalize_url(_optional("ZOOM_API_BASE_URL", "https://api.zoom.us/v2")),
         zoom_oauth_client_id=_require("ZOOM_OAUTH_CLIENT_ID"),
@@ -226,3 +240,14 @@ def _extract_origin(url: str) -> str:
 
 def _blank_to_none(value: str) -> str | None:
     return value if value else None
+
+
+def _as_signature_param_order(value: str) -> str:
+    normalized = ",".join(part.strip() for part in value.split(",") if part.strip())
+    allowed = {"key,timestamp,userId", "key,userId,timestamp"}
+    if normalized not in allowed:
+        raise AppError(
+            "CFG014",
+            "ZOOM_LTI_SIGNATURE_PARAM_ORDER must be 'key,timestamp,userId' or 'key,userId,timestamp'.",
+        )
+    return normalized

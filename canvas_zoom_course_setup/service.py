@@ -9,8 +9,13 @@ from pathlib import Path
 from .clients import CanvasClient, ZoomClient, ZoomLTIClient
 from .config import AppConfig
 from .errors import AppError
-from .models import CourseResult, CourseShellRow
-from .utils import build_meeting_plan, replace_homepage_placeholders, summarize_migration_issues
+from .models import CanvasCourse, CourseResult, CourseShellRow
+from .utils import (
+    build_meeting_plan,
+    extract_lti_context_id_from_launch_payload_text,
+    replace_homepage_placeholders,
+    summarize_migration_issues,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -59,11 +64,11 @@ class CourseShellSetupService:
         live_course = self.canvas.get_course(row.live_course_id, include_lti_context_id=True)
         master_course = self.canvas.get_course(row.master_course_id, include_lti_context_id=False)
         role = self.canvas.resolve_coordinator_role()
-        lti_context_id = row.lti_context_id or live_course.lti_context_id
+        lti_context_id = self._resolve_lti_context_id(live_course, row)
         if not lti_context_id:
             raise AppError(
                 "ZLTCTX",
-                f"Course {live_course.canvas_id} does not have an LTI context ID available. Add an 'LTI Context ID' column for this row or verify Canvas exposes include[]=lti_context_id.",
+                f"Course {live_course.canvas_id} does not have an LTI context ID available from Canvas course data, launch payload fallback, or CSV override.",
             )
 
         meeting_plan = build_meeting_plan(row, live_course, self.config)
@@ -96,8 +101,10 @@ class CourseShellSetupService:
         )
         warnings = summarize_migration_issues(issues)
 
+        configured_host = row.zoom_host_user_id or self.config.zoom_lti_host_user_id
+        resolved_host_user_id = self.zoom.resolve_lti_host_user_id(configured_host)
         meeting_id = self.zoom_lti.create_and_associate(
-            host_user_id=row.zoom_host_user_id or self.config.zoom_lti_host_user_id,
+            host_user_id=resolved_host_user_id,
             context_id=lti_context_id,
             domain=self.config.canvas_domain,
             course_id=live_course.canvas_id,
@@ -146,6 +153,39 @@ class CourseShellSetupService:
             warnings=warnings,
             elapsed_seconds=elapsed,
         )
+
+    def _resolve_lti_context_id(self, course: CanvasCourse, row: CourseShellRow) -> str | None:
+        if course.lti_context_id:
+            return course.lti_context_id
+
+        from_launch = self._lti_context_id_from_launch_payload(course, row)
+        if from_launch:
+            return from_launch
+
+        return row.lti_context_id
+
+    def _lti_context_id_from_launch_payload(self, course: CanvasCourse, row: CourseShellRow) -> str | None:
+        directory = self.config.lti_launch_payloads_directory
+        if not directory:
+            return None
+        base_path = Path(directory)
+        if not base_path.exists():
+            return None
+
+        candidates = [
+            base_path / f"{course.canvas_id}.json",
+            base_path / f"{course.canvas_id}.jwt",
+            base_path / f"{row.live_course_id}.json",
+            base_path / f"{row.live_course_id}.jwt",
+        ]
+        for candidate in candidates:
+            if not candidate.exists() or not candidate.is_file():
+                continue
+            context_id = extract_lti_context_id_from_launch_payload_text(candidate.read_text(encoding="utf-8"))
+            if context_id:
+                LOGGER.debug("Resolved LTI context ID for course %s from launch payload file %s", course.canvas_id, candidate)
+                return context_id
+        return None
 
 
 def write_report(report_path: Path, results: list[CourseResult]) -> None:
