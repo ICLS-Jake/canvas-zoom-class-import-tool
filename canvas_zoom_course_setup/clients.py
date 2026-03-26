@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 import threading
 import time
 from typing import Any
@@ -12,7 +13,7 @@ import requests
 from .config import AppConfig
 from .errors import ApiError, AppError
 from .models import CanvasCourse, RoleSpec
-from .utils import build_lti_signature, summarize_migration_issues
+from .utils import build_lti_signature, build_lti_signature_base_string, summarize_migration_issues
 
 LOGGER = logging.getLogger(__name__)
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
@@ -334,9 +335,23 @@ class ZoomLTIClient:
         meeting_info: dict[str, Any],
     ) -> str:
         timestamp = str(int(time.time() * 1000))
-        signature = build_lti_signature(
-            self.config.zoom_lti_secret,
-            [("key", self.config.zoom_lti_key), ("timestamp", timestamp), ("userId", host_user_id)],
+        signature_parts = [("key", self.config.zoom_lti_key), ("timestamp", timestamp), ("userId", host_user_id)]
+        signature_base_string = build_lti_signature_base_string(signature_parts)
+        signature = build_lti_signature(self.config.zoom_lti_secret, signature_parts)
+        LOGGER.debug(
+            "Zoom LTI signing inputs: base_url=%s key=%s timestamp=%s userId=%s userId_format=%s",
+            self.config.zoom_lti_base_url,
+            self.config.zoom_lti_key,
+            timestamp,
+            host_user_id,
+            "email" if _looks_like_email(host_user_id) else "zoom_user_id",
+        )
+        if self.config.zoom_lti_debug_signature_base_string:
+            print(f"Zoom LTI signature base string: {signature_base_string}", file=sys.stderr)
+        LOGGER.debug(
+            "Zoom LTI signature generated (suppressed): length=%s padding_removed=%s",
+            len(signature),
+            "=" not in signature,
         )
         response = self.http.request(
             "POST",
@@ -363,6 +378,11 @@ class ZoomLTIClient:
         meeting_id = str(result.get("id", "")).strip()
         error_code = str(payload.get("errorCode", ""))
         error_message = str(payload.get("errorMessage", "Unknown LTI error"))
+        if "2203" in error_message and "verify lti signature failed" in error_message.lower():
+            error_message = (
+                f"{error_message} Verify ZOOM_LTI_KEY and ZOOM_LTI_SECRET are from Zoom LTI Pro "
+                "(not Zoom OAuth credentials), verify ZOOM_LTI_HOST_USER_ID format, and ensure the system clock is accurate."
+            )
         raise AppError(
             f"ZLT{error_code or '000'}",
             f"Zoom LTI createAndAssociate failed: {error_message}",
@@ -477,3 +497,7 @@ def _parse_link_header(link_header: str) -> dict[str, str]:
         rel = rel_tokens[1].strip().strip('"')
         links[rel] = url
     return links
+
+
+def _looks_like_email(value: str) -> bool:
+    return "@" in value and "." in value.split("@")[-1]
