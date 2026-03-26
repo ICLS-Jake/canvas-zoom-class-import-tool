@@ -16,7 +16,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Set up existing Canvas course shells by copying content, enrolling coordinators, creating Zoom meetings through LTI Pro, and updating the course homepage."
     )
-    parser.add_argument("--csv", required=True, help="Path to the course setup CSV file.")
+    parser.add_argument(
+        "--csv",
+        help="Path to the course setup CSV file. If omitted, uses CSV_FILE_PATH from .env (default: canvas_zoom_import_courses.csv).",
+    )
     parser.add_argument("--env-file", default=".env", help="Path to the .env file. Defaults to .env in the current folder.")
     parser.add_argument("--workers", type=int, help="Override the number of worker threads.")
     parser.add_argument("--report-path", help="Optional explicit CSV report path.")
@@ -36,7 +39,8 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         config = load_config(Path(args.env_file))
-        rows = load_course_rows(Path(args.csv))
+        csv_path = Path(args.csv) if args.csv else Path(config.csv_file_path)
+        rows = load_course_rows(csv_path)
         workers = args.workers or config.max_workers
         if workers <= 0:
             raise AppError("CLI001", "--workers must be greater than zero.")

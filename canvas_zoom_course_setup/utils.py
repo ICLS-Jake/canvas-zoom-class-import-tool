@@ -78,9 +78,13 @@ def replace_homepage_placeholders(
 
 
 def build_lti_signature(secret: str, parts: list[tuple[str, str]]) -> str:
-    base_string = "&".join(f"{key}={value}" for key, value in parts)
+    base_string = build_lti_signature_base_string(parts)
     digest = hmac.new(secret.encode("utf-8"), base_string.encode("utf-8"), hashlib.sha1).digest()
     return urlsafe_b64encode(digest).decode("utf-8").rstrip("=")
+
+
+def build_lti_signature_base_string(parts: list[tuple[str, str]]) -> str:
+    return "&".join(f"{key}={value}" for key, value in parts)
 
 
 def summarize_migration_issues(issues: list[dict]) -> str:

@@ -13,7 +13,7 @@ The script is designed for batch work and includes retries, timeout handling, pa
 
 - Main entry point: `python -m canvas_zoom_course_setup`
 - Environment file: `.env` (create this file manually in the repo root)
-- Example input CSV: `sample-input/course_shells_example.csv`
+- Default input CSV: `canvas_zoom_import_courses.csv`
 
 ## Prerequisites
 
@@ -50,6 +50,7 @@ python -m pip install -r requirements.txt
 
 ```dotenv
 # Required
+CSV_FILE_PATH=canvas_zoom_import_courses.csv
 CANVAS_BASE_URL=https://your-canvas-domain.instructure.com
 CANVAS_API_TOKEN=replace_me
 ZOOM_LTI_KEY=replace_me
@@ -72,6 +73,7 @@ CANVAS_POLL_INTERVAL_SECONDS=10
 CANVAS_NOTIFY_COORDINATORS=false
 CANVAS_NOTIFY_HOMEPAGE_UPDATE=false
 ZOOM_LTI_BASE_URL=https://applications.zoom.us/api/v1/lti/rich
+ZOOM_LTI_DEBUG_SIGNATURE_BASE_STRING=false
 ZOOM_OAUTH_BASE_URL=https://zoom.us
 ZOOM_API_BASE_URL=https://api.zoom.us/v2
 DEFAULT_MEETING_START_TIME=18:00
@@ -91,7 +93,7 @@ REPORT_DIRECTORY=reports
    - Install/authorize it for the same Zoom account that owns the meeting host user.
    - Grant API scopes that allow this tool to fetch meeting details immediately after `createAndAssociate` (for example, read access to meeting endpoints such as `GET /meetings/{meetingId}` or `GET /users/{userId}/meetings`).
    - This follow-up read is how the script captures join URL and passcode for homepage placeholder replacement and reporting.
-5. Prepare your CSV.
+5. Prepare your CSV (default file: `canvas_zoom_import_courses.csv`).
 6. Run a dry run first.
 
 ## CSV format
@@ -141,17 +143,18 @@ The rest of the page body is preserved exactly as returned by Canvas.
 Dry run:
 
 ```powershell
-python -m canvas_zoom_course_setup --csv .\sample-input\course_shells_example.csv --dry-run
+python -m canvas_zoom_course_setup --dry-run
 ```
 
 Live run:
 
 ```powershell
-python -m canvas_zoom_course_setup --csv .\sample-input\course_shells_example.csv
+python -m canvas_zoom_course_setup
 ```
 
 Useful flags:
 
+- `--csv .\my-other-import-file.csv` (overrides `CSV_FILE_PATH`)
 - `--env-file .env`
 - `--workers 6`
 - `--report-path .\reports\my-run.csv`
