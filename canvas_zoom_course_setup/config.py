@@ -31,6 +31,7 @@ ALLOWED_BASE_ROLE_TYPES = {
 @dataclass(frozen=True)
 class AppConfig:
     csv_file_path: str
+    lti_launch_payloads_directory: str | None
     canvas_base_url: str
     canvas_domain: str
     canvas_api_token: str
@@ -105,6 +106,7 @@ def load_config(env_file: Path | None) -> AppConfig:
 
     return AppConfig(
         csv_file_path=_optional("CSV_FILE_PATH", "canvas_zoom_import_courses.csv"),
+        lti_launch_payloads_directory=_blank_to_none(_optional("LTI_LAUNCH_PAYLOADS_DIRECTORY")),
         canvas_base_url=canvas_base_url,
         canvas_domain=canvas_domain,
         canvas_api_token=_require("CANVAS_API_TOKEN"),

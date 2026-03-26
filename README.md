@@ -35,7 +35,7 @@ The script is designed for batch work and includes retries, timeout handling, pa
 - Zoom documents that LMS calendar creation is asynchronous, and the account owner or admin used for LTI calendar creation may need to launch LTI Pro in the course as the instructor before calendar items are visible.
 - The homepage replacement logic is string-based. The imported course homepage must contain the configured placeholders, and it should be a classic HTML page rather than a Canvas block-editor page.
 - The script is not fully idempotent for Zoom meetings. If you rerun it for the same course, it will create a new meeting unless you intervene manually.
-- Some Canvas environments expose `lti_context_id` via `GET /api/v1/courses/:id?include[]=lti_context_id`. If yours does not, add an `LTI Context ID` column to the CSV for each course row.
+- Canvas does not provide a guaranteed universal admin toggle that forces `lti_context_id` to appear in every course API response. This tool first tries `include[]=lti_context_id`, then optionally reads `context.id` from an LTI 1.3 launch payload file, and only then falls back to the CSV `LTI Context ID` column.
 
 ## Setup
 
@@ -61,6 +61,7 @@ ZOOM_OAUTH_CLIENT_SECRET=replace_me
 ZOOM_OAUTH_ACCOUNT_ID=replace_me
 
 # Common optional overrides
+LTI_LAUNCH_PAYLOADS_DIRECTORY=
 CANVAS_ROLE_ACCOUNT_ID=self
 CANVAS_COORDINATOR_ROLE_ID=
 CANVAS_COORDINATOR_ROLE_LABEL=Coordinator
@@ -93,7 +94,11 @@ REPORT_DIRECTORY=reports
    - Install/authorize it for the same Zoom account that owns the meeting host user.
    - Grant API scopes that allow this tool to fetch meeting details immediately after `createAndAssociate` (for example, read access to meeting endpoints such as `GET /meetings/{meetingId}` or `GET /users/{userId}/meetings`).
    - This follow-up read is how the script captures join URL and passcode for homepage placeholder replacement and reporting.
-5. Prepare your CSV (default file: `canvas_zoom_import_courses.csv`).
+5. Prepare your CSV (default file: `canvas_zoom_import_courses.csv`), and optionally add launch payload files if Canvas omits `lti_context_id`:
+   - Set `LTI_LAUNCH_PAYLOADS_DIRECTORY` to a directory containing per-course payload files.
+   - Supported file names: `<canvas_course_id>.json`, `<canvas_course_id>.jwt`, `<live_course_id>.json`, or `<live_course_id>.jwt`.
+   - For JSON payloads, the script reads LTI 1.3 `context.id` from `https://purl.imsglobal.org/spec/lti/claim/context`.
+   - For JWT payloads, the script decodes the payload section (without signature verification) and reads the same claim.
 6. Run a dry run first.
 
 ## CSV format
