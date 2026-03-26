@@ -12,8 +12,8 @@ The script is designed for batch work and includes retries, timeout handling, pa
 ## Files
 
 - Main entry point: `python -m canvas_zoom_course_setup`
-- Example environment file: `.env.example`
-- Example input CSV: `sample-input/course_shells_example.csv`
+- Environment file: `.env` (create this file manually in the repo root)
+- Default input CSV: `canvas_zoom_import_courses.csv`
 
 ## Prerequisites
 
@@ -27,8 +27,7 @@ The script is designed for batch work and includes retries, timeout handling, pa
 - Zoom LTI Pro credentials:
   - `ZOOM_LTI_KEY`
   - `ZOOM_LTI_SECRET`
-  - a host `userId` or email for meeting creation
-- Zoom Server-to-Server OAuth app with scopes that can read meetings after creation.
+  - `ZOOM_LTI_HOST_USER_ID` (preferred: host email; the script resolves it to Zoom user ID automatically)
 
 ## Important operational notes
 
@@ -36,7 +35,7 @@ The script is designed for batch work and includes retries, timeout handling, pa
 - Zoom documents that LMS calendar creation is asynchronous, and the account owner or admin used for LTI calendar creation may need to launch LTI Pro in the course as the instructor before calendar items are visible.
 - The homepage replacement logic is string-based. The imported course homepage must contain the configured placeholders, and it should be a classic HTML page rather than a Canvas block-editor page.
 - The script is not fully idempotent for Zoom meetings. If you rerun it for the same course, it will create a new meeting unless you intervene manually.
-- Some Canvas environments expose `lti_context_id` via `GET /api/v1/courses/:id?include[]=lti_context_id`. If yours does not, add an `LTI Context ID` column to the CSV for each course row.
+- Canvas does not provide a guaranteed universal admin toggle that forces `lti_context_id` to appear in every course API response. This tool first tries `include[]=lti_context_id`, then optionally reads `context.id` from an LTI 1.3 launch payload file, and only then falls back to the CSV `LTI Context ID` column.
 
 ## Setup
 
@@ -47,9 +46,64 @@ The script is designed for batch work and includes retries, timeout handling, pa
 python -m pip install -r requirements.txt
 ```
 
-3. Copy `.env.example` to `.env` and fill in the secrets.
-4. Prepare your CSV.
-5. Run a dry run first.
+3. Create a `.env` file in the repository root. You can copy/paste this starter template and then fill in your real values:
+
+```dotenv
+# Required
+CSV_FILE_PATH=canvas_zoom_import_courses.csv
+CANVAS_BASE_URL=https://your-canvas-domain.instructure.com
+CANVAS_API_TOKEN=replace_me
+ZOOM_LTI_KEY=replace_me
+ZOOM_LTI_SECRET=replace_me
+ZOOM_LTI_HOST_USER_ID=replace_me
+ZOOM_OAUTH_CLIENT_ID=replace_me
+ZOOM_OAUTH_CLIENT_SECRET=replace_me
+ZOOM_OAUTH_ACCOUNT_ID=replace_me
+
+# Common optional overrides
+LTI_LAUNCH_PAYLOADS_DIRECTORY=
+CANVAS_ROLE_ACCOUNT_ID=self
+CANVAS_COORDINATOR_ROLE_ID=
+CANVAS_COORDINATOR_ROLE_LABEL=Coordinator
+CANVAS_COORDINATOR_BASE_ROLE_TYPE=TeacherEnrollment
+CANVAS_HOMEPAGE_LINK_PLACEHOLDER={{ZOOM_MEETING_LINK}}
+CANVAS_HOMEPAGE_PASSCODE_PLACEHOLDER={{ZOOM_MEETING_PASSCODE}}
+CANVAS_REQUEST_TIMEOUT_SECONDS=45
+CANVAS_CONTENT_COPY_TIMEOUT_MINUTES=30
+CANVAS_POLL_INTERVAL_SECONDS=10
+CANVAS_NOTIFY_COORDINATORS=false
+CANVAS_NOTIFY_HOMEPAGE_UPDATE=false
+ZOOM_LTI_BASE_URL=https://applications.zoom.us/api/v1/lti/rich
+ZOOM_LTI_DEBUG_SIGNATURE_BASE_STRING=false
+ZOOM_LTI_SIGNATURE_USE_URLSAFE_BASE64=true
+ZOOM_LTI_SIGNATURE_STRIP_PADDING=true
+ZOOM_LTI_SIGNATURE_PARAM_ORDER=key,timestamp,userId
+ZOOM_OAUTH_BASE_URL=https://zoom.us
+ZOOM_API_BASE_URL=https://api.zoom.us/v2
+DEFAULT_MEETING_START_TIME=18:00
+DEFAULT_MEETING_DURATION_MINUTES=120
+DEFAULT_MEETING_TIMEZONE=America/Denver
+MEETING_TOPIC_TEMPLATE={course_code} Live Class Session
+ZOOM_MEETING_SETTINGS_JSON={"host_video":true,"participant_video":true,"join_before_host":false,"mute_upon_entry":true,"waiting_room":true}
+MAX_WORKERS=4
+MAX_RETRIES=5
+MAX_BACKOFF_SECONDS=30
+CANVAS_PER_PAGE=100
+REPORT_DIRECTORY=reports
+```
+
+4. Configure a Zoom Server-to-Server OAuth app for post-creation meeting reads:
+   - In Zoom App Marketplace, create a **Server-to-Server OAuth** app (not a user-managed OAuth app).
+   - Install/authorize it for the same Zoom account that owns the meeting host user.
+   - Grant API scopes that allow this tool to fetch meeting details immediately after `createAndAssociate` (for example, read access to meeting endpoints such as `GET /meetings/{meetingId}` or `GET /users/{userId}/meetings`).
+   - Include user-read access (for example `GET /users/{email}`), because host emails are resolved to Zoom user IDs before calling `createAndAssociate`.
+   - This follow-up read is how the script captures join URL and passcode for homepage placeholder replacement and reporting.
+5. Prepare your CSV (default file: `canvas_zoom_import_courses.csv`), and optionally add launch payload files if Canvas omits `lti_context_id`:
+   - Set `LTI_LAUNCH_PAYLOADS_DIRECTORY` to a directory containing per-course payload files.
+   - Supported file names: `<canvas_course_id>.json`, `<canvas_course_id>.jwt`, `<live_course_id>.json`, or `<live_course_id>.jwt`.
+   - For JSON payloads, the script reads LTI 1.3 `context.id` from `https://purl.imsglobal.org/spec/lti/claim/context`.
+   - For JWT payloads, the script decodes the payload section (without signature verification) and reads the same claim.
+6. Run a dry run first.
 
 ## CSV format
 
@@ -78,6 +132,7 @@ Notes:
 - Dates support `YYYY-MM-DD`, but using `YYYY-MM-DD` is strongly recommended.
 - Timezones should use IANA names such as `America/Denver`.
 - Canvas course identifiers can be internal IDs. If your Canvas instance allows SIS-style identifiers such as `sis_course_id:ABC123`, the script resolves the course first and then uses the real Canvas course ID for downstream actions.
+- `Zoom Host User ID` accepts either a Zoom user ID or an email. Email is preferred; the script resolves it to a Zoom user ID automatically and caches the result for the run.
 
 ## Placeholder setup
 
@@ -98,21 +153,28 @@ The rest of the page body is preserved exactly as returned by Canvas.
 Dry run:
 
 ```powershell
-python -m canvas_zoom_course_setup --csv .\sample-input\course_shells_example.csv --dry-run
+python -m canvas_zoom_course_setup --dry-run
 ```
 
 Live run:
 
 ```powershell
-python -m canvas_zoom_course_setup --csv .\sample-input\course_shells_example.csv
+python -m canvas_zoom_course_setup
 ```
 
 Useful flags:
 
+- `--csv .\my-other-import-file.csv` (overrides `CSV_FILE_PATH`)
 - `--env-file .env`
 - `--workers 6`
 - `--report-path .\reports\my-run.csv`
 - `--log-level DEBUG`
+
+Zoom LTI signature troubleshooting helper:
+
+```powershell
+python -m canvas_zoom_course_setup.lti_signature_debug_helper --key <LTI_KEY> --timestamp <TIMESTAMP_MS> --user-id <USER_ID> --secret <LTI_SECRET>
+```
 
 ## Output
 
@@ -143,6 +205,7 @@ Default report location: `reports/course-shell-setup-YYYYMMDD-HHMMSS.csv`
 - `ZLT...`: Zoom LTI meeting creation or association failed
 - `ZOM401`: Zoom OAuth token request failed
 - `ZOM404`: Zoom meeting lookup failed
+- `ZOM409`: Zoom host email could not be resolved to a Zoom user ID
 - `PGE...`: homepage/front-page issue
 
 ## Testing

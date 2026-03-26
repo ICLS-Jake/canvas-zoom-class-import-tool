@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 import threading
 import time
 from typing import Any
@@ -12,7 +13,8 @@ import requests
 from .config import AppConfig
 from .errors import ApiError, AppError
 from .models import CanvasCourse, RoleSpec
-from .utils import build_lti_signature, summarize_migration_issues
+from .utils import build_lti_signature, build_lti_signature_base_string, summarize_migration_issues
+from .utils import build_lti_signature_digest, build_lti_signature_parts
 
 LOGGER = logging.getLogger(__name__)
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
@@ -334,9 +336,38 @@ class ZoomLTIClient:
         meeting_info: dict[str, Any],
     ) -> str:
         timestamp = str(int(time.time() * 1000))
+        signature_parts = build_lti_signature_parts(
+            self.config.zoom_lti_key,
+            timestamp,
+            host_user_id,
+            self.config.zoom_lti_signature_param_order,
+        )
+        signature_base_string = build_lti_signature_base_string(signature_parts)
         signature = build_lti_signature(
             self.config.zoom_lti_secret,
-            [("key", self.config.zoom_lti_key), ("timestamp", timestamp), ("userId", host_user_id)],
+            signature_parts,
+            use_urlsafe_base64=self.config.zoom_lti_signature_use_urlsafe_base64,
+            strip_padding=self.config.zoom_lti_signature_strip_padding,
+        )
+        user_id_in_signature = next((value for key, value in signature_parts if key == "userId"), "")
+        LOGGER.debug(
+            "Zoom LTI signing inputs: base_url=%s key=%s timestamp=%s userId=%s userId_format=%s base_string=%s",
+            self.config.zoom_lti_base_url,
+            self.config.zoom_lti_key,
+            timestamp,
+            host_user_id,
+            "email" if _looks_like_email(host_user_id) else "zoom_user_id",
+            signature_base_string,
+        )
+        if self.config.zoom_lti_debug_signature_base_string:
+            print(f"Zoom LTI signature base string: {signature_base_string}", file=sys.stderr)
+        LOGGER.debug(
+            "Zoom LTI signature generated (suppressed): length=%s urlsafe_base64=%s padding_stripped=%s param_order=%s userId_matches_body=%s",
+            len(signature),
+            self.config.zoom_lti_signature_use_urlsafe_base64,
+            self.config.zoom_lti_signature_strip_padding,
+            self.config.zoom_lti_signature_param_order,
+            user_id_in_signature == host_user_id,
         )
         response = self.http.request(
             "POST",
@@ -363,6 +394,25 @@ class ZoomLTIClient:
         meeting_id = str(result.get("id", "")).strip()
         error_code = str(payload.get("errorCode", ""))
         error_message = str(payload.get("errorMessage", "Unknown LTI error"))
+        if "2203" in error_message and "verify lti signature failed" in error_message.lower():
+            error_message = (
+                f"{error_message} Verify ZOOM_LTI_KEY and ZOOM_LTI_SECRET are from Zoom LTI Pro "
+                "(not Zoom OAuth credentials), verify ZOOM_LTI_HOST_USER_ID format, and ensure the system clock is accurate."
+            )
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                digest_hex = build_lti_signature_digest(self.config.zoom_lti_secret, signature_base_string).hex()
+                LOGGER.debug(
+                    "Zoom LTI 2203 debug details: base_url=%s key=%s timestamp=%s userId=%s base_string=%s urlsafe_base64=%s padding_stripped=%s param_order=%s digest_sha1=%s",
+                    self.config.zoom_lti_base_url,
+                    self.config.zoom_lti_key,
+                    timestamp,
+                    host_user_id,
+                    signature_base_string,
+                    self.config.zoom_lti_signature_use_urlsafe_base64,
+                    self.config.zoom_lti_signature_strip_padding,
+                    self.config.zoom_lti_signature_param_order,
+                    digest_hex,
+                )
         raise AppError(
             f"ZLT{error_code or '000'}",
             f"Zoom LTI createAndAssociate failed: {error_message}",
@@ -383,6 +433,8 @@ class ZoomClient:
         self._token_lock = threading.Lock()
         self._cached_token: str | None = None
         self._token_expires_at: float = 0.0
+        self._user_id_cache_lock = threading.Lock()
+        self._user_id_cache: dict[str, str] = {}
 
     def get_meeting(self, meeting_id: str) -> dict[str, Any]:
         token = self._access_token()
@@ -395,6 +447,43 @@ class ZoomClient:
         except ApiError as exc:
             raise AppError("ZOM404", f"Could not retrieve Zoom meeting {meeting_id}.", cause=exc) from exc
         return _require_dict(_safe_json(response), "ZOM405", "Zoom meeting response was not an object.")
+
+    def resolve_lti_host_user_id(self, host_value: str) -> str:
+        candidate = host_value.strip()
+        if not candidate:
+            raise AppError("ZOM408", "Zoom LTI host user value is empty.")
+
+        if "@" not in candidate:
+            LOGGER.info("Zoom LTI host source: explicit Zoom user ID.")
+            return candidate
+
+        with self._user_id_cache_lock:
+            cached = self._user_id_cache.get(candidate.lower())
+        if cached:
+            LOGGER.info("Zoom LTI host source: resolved from email cache (%s).", candidate)
+            return cached
+
+        token = self._access_token()
+        try:
+            response = self.http.request(
+                "GET",
+                f"/users/{candidate}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        except ApiError as exc:
+            if exc.status_code == 404:
+                raise AppError("ZOM409", f"Zoom host email '{candidate}' could not be resolved to a Zoom user ID.", cause=exc) from exc
+            raise AppError("ZOM410", f"Could not look up Zoom host email '{candidate}'.", cause=exc) from exc
+
+        payload = _require_dict(_safe_json(response), "ZOM411", "Zoom user lookup response was not an object.")
+        user_id = str(payload.get("id", "")).strip()
+        if not user_id:
+            raise AppError("ZOM412", f"Zoom user lookup for '{candidate}' did not return an ID.")
+
+        with self._user_id_cache_lock:
+            self._user_id_cache[candidate.lower()] = user_id
+        LOGGER.info("Zoom LTI host source: resolved from email (%s).", candidate)
+        return user_id
 
     def _access_token(self) -> str:
         with self._token_lock:
@@ -477,3 +566,7 @@ def _parse_link_header(link_header: str) -> dict[str, str]:
         rel = rel_tokens[1].strip().strip('"')
         links[rel] = url
     return links
+
+
+def _looks_like_email(value: str) -> bool:
+    return "@" in value and "." in value.split("@")[-1]
