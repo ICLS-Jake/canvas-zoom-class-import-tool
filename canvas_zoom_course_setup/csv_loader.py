@@ -168,7 +168,7 @@ def _parse_course_days(value: str, row_number: int) -> list[int]:
 
 
 def _parse_list(value: str) -> list[str]:
-    return [item.strip() for item in re.split(r"\s*[;,|]\s*|\s*,\s*", value.strip()) if item.strip()]
+    return [item.strip() for item in re.split(r"\s*[;,|]\s*", value.strip()) if item.strip()]
 
 
 def _normalize_header(header: str) -> str:

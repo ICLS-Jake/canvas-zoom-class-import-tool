@@ -75,15 +75,15 @@ class CourseShellSetupService:
 
         if dry_run:
             elapsed = time.perf_counter() - started_at
-            action_summary = (
-                f"Would create Zoom meeting starting {meeting_plan.first_occurrence_at.isoformat()} and update homepage placeholders."
-            )
             if zoom_only:
-                warning_text = f"{action_summary} Canvas content copy and coordinator enrollment would be skipped (--zoom-only)."
+                warning_text = (
+                    f"Would create Zoom meeting starting {meeting_plan.first_occurrence_at.isoformat()} and update homepage placeholders."
+                    " Canvas content copy and coordinator enrollment would be skipped (--zoom-only)."
+                )
             else:
                 warning_text = (
                     f"Would copy content, enroll {len(row.coordinator_user_ids)} coordinator(s), create Zoom meeting starting "
-                    f"{meeting_plan.first_occurrence_at.isoformat()}"
+                    f"{meeting_plan.first_occurrence_at.isoformat()} and update homepage placeholders."
                 )
             return CourseResult(
                 row_number=row.row_number,

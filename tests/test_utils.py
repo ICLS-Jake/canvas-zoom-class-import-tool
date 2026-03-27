@@ -24,6 +24,8 @@ class UtilsTests(unittest.TestCase):
 
     def test_build_meeting_plan_uses_first_matching_day(self) -> None:
         config = AppConfig(
+            csv_file_path="canvas_zoom_import_courses.csv",
+            lti_launch_payloads_directory=None,
             canvas_base_url="https://canvas.example.edu",
             canvas_domain="https://canvas.example.edu",
             canvas_api_token="token",
@@ -43,6 +45,10 @@ class UtilsTests(unittest.TestCase):
             zoom_lti_secret="secret",
             zoom_lti_host_user_id="teacher@example.edu",
             zoom_lti_tool_id=None,
+            zoom_lti_debug_signature_base_string=False,
+            zoom_lti_signature_use_urlsafe_base64=True,
+            zoom_lti_signature_strip_padding=True,
+            zoom_lti_signature_param_order="key,timestamp,userId",
             zoom_oauth_base_url="https://zoom.us",
             zoom_api_base_url="https://api.zoom.us/v2",
             zoom_oauth_client_id="client",
