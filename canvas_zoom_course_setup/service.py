@@ -176,6 +176,56 @@ class CourseShellSetupService:
         if course.lti_context_id:
             return course.lti_context_id
 
+        LOGGER.info(
+            "Row %s: lti_context_id not present, attempting sessionless launch to trigger generation.",
+            row.row_number,
+        )
+        tool_id: int | None = None
+        if self.config.zoom_lti_tool_id:
+            try:
+                tool_id = int(self.config.zoom_lti_tool_id)
+            except ValueError:
+                LOGGER.warning(
+                    "Row %s: invalid ZOOM_LTI_TOOL_ID value '%s'. Falling back to tool discovery.",
+                    row.row_number,
+                    self.config.zoom_lti_tool_id,
+                )
+        if tool_id is None:
+            tool_id = self.canvas.find_zoom_lti_tool_id(course.canvas_id)
+            if tool_id is None:
+                LOGGER.warning(
+                    "Row %s: could not discover Zoom LTI tool ID for course %s. Set ZOOM_LTI_TOOL_ID in .env to enable auto-generation.",
+                    row.row_number,
+                    course.canvas_id,
+                )
+        if tool_id is not None:
+            try:
+                self.canvas.trigger_lti_context_id_generation(course.canvas_id, tool_id)
+            except Exception as error:  # pragma: no cover
+                LOGGER.warning(
+                    "Row %s: sessionless launch failed for course %s, tool %s. Will try fallback paths. Error: %s",
+                    row.row_number,
+                    course.canvas_id,
+                    tool_id,
+                    error,
+                )
+            refreshed_course = self.canvas.get_course(
+                course.source_identifier,
+                include_lti_context_id=True,
+                force_refresh=True,
+            )
+            if refreshed_course.lti_context_id:
+                LOGGER.info(
+                    "Row %s: lti_context_id successfully generated via sessionless launch: %s",
+                    row.row_number,
+                    refreshed_course.lti_context_id,
+                )
+                return refreshed_course.lti_context_id
+            LOGGER.debug(
+                "Row %s: lti_context_id still absent after sessionless launch, trying fallback paths.",
+                row.row_number,
+            )
+
         from_launch = self._lti_context_id_from_launch_payload(course, row)
         if from_launch:
             return from_launch

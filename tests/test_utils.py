@@ -42,6 +42,7 @@ class UtilsTests(unittest.TestCase):
             zoom_lti_key="key",
             zoom_lti_secret="secret",
             zoom_lti_host_user_id="teacher@example.edu",
+            zoom_lti_tool_id=None,
             zoom_oauth_base_url="https://zoom.us",
             zoom_api_base_url="https://api.zoom.us/v2",
             zoom_oauth_client_id="client",

@@ -148,15 +148,18 @@ class CanvasClient:
         )
         self._course_cache: dict[tuple[str, bool], CanvasCourse] = {}
         self._course_cache_lock = threading.Lock()
+        self._zoom_tool_id_cache: dict[int, int | None] = {}
+        self._zoom_tool_id_cache_lock = threading.Lock()
         self._role_cache: RoleSpec | None = None
         self._role_lock = threading.Lock()
 
-    def get_course(self, course_identifier: str, include_lti_context_id: bool) -> CanvasCourse:
+    def get_course(self, course_identifier: str, include_lti_context_id: bool, force_refresh: bool = False) -> CanvasCourse:
         cache_key = (course_identifier, include_lti_context_id)
-        with self._course_cache_lock:
-            cached = self._course_cache.get(cache_key)
-        if cached is not None:
-            return cached
+        if not force_refresh:
+            with self._course_cache_lock:
+                cached = self._course_cache.get(cache_key)
+            if cached is not None:
+                return cached
 
         params: list[tuple[str, Any]] = []
         if include_lti_context_id:
@@ -179,6 +182,65 @@ class CanvasClient:
         with self._course_cache_lock:
             self._course_cache[cache_key] = course
         return course
+
+    def find_zoom_lti_tool_id(self, course_id: int) -> int | None:
+        with self._zoom_tool_id_cache_lock:
+            if course_id in self._zoom_tool_id_cache:
+                return self._zoom_tool_id_cache[course_id]
+
+        tools = self.http.list_paginated(
+            f"/api/v1/courses/{course_id}/external_tools",
+            params={"per_page": self.config.canvas_per_page},
+        )
+        best_match: tuple[int, int] | None = None
+        for tool in tools:
+            tool_id = tool.get("id")
+            if tool_id is None:
+                continue
+            try:
+                parsed_tool_id = int(tool_id)
+            except (TypeError, ValueError):
+                continue
+
+            name = str(tool.get("name") or "")
+            url = str(tool.get("url") or "")
+            domain = str(tool.get("domain") or "")
+            lti_version = str(tool.get("lti_version") or "")
+            normalized_haystack = f"{name} {url} {domain}".lower()
+            if "zoom" not in normalized_haystack and "zoom.us" not in normalized_haystack:
+                continue
+
+            score = 1
+            lowered_domain = domain.lower()
+            lowered_url = url.lower()
+            if "applications.zoom.us" in lowered_domain or "applications.zoom.us" in lowered_url:
+                score += 2
+            if lti_version == "1.3":
+                score += 1
+
+            if best_match is None or score > best_match[0]:
+                best_match = (score, parsed_tool_id)
+
+        resolved = best_match[1] if best_match else None
+        with self._zoom_tool_id_cache_lock:
+            self._zoom_tool_id_cache[course_id] = resolved
+        return resolved
+
+    def trigger_lti_context_id_generation(self, course_id: int, tool_id: int) -> None:
+        try:
+            self.http.request(
+                "GET",
+                f"/api/v1/courses/{course_id}/external_tools/sessionless_launch",
+                params={"id": tool_id},
+                expected_status={200},
+            )
+        except ApiError as exc:
+            LOGGER.warning(
+                "Sessionless launch failed for course %s, tool %s. Will try fallback paths. Error: %s",
+                course_id,
+                tool_id,
+                exc,
+            )
 
     def resolve_coordinator_role(self) -> RoleSpec:
         with self._role_lock:

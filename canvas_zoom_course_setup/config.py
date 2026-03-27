@@ -50,6 +50,7 @@ class AppConfig:
     zoom_lti_key: str
     zoom_lti_secret: str
     zoom_lti_host_user_id: str
+    zoom_lti_tool_id: str | None
     zoom_lti_debug_signature_base_string: bool
     zoom_lti_signature_use_urlsafe_base64: bool
     zoom_lti_signature_strip_padding: bool
@@ -132,6 +133,7 @@ def load_config(env_file: Path | None) -> AppConfig:
         zoom_lti_key=_require("ZOOM_LTI_KEY"),
         zoom_lti_secret=_require("ZOOM_LTI_SECRET"),
         zoom_lti_host_user_id=_require("ZOOM_LTI_HOST_USER_ID"),
+        zoom_lti_tool_id=_blank_to_none(_optional("ZOOM_LTI_TOOL_ID")),
         zoom_lti_debug_signature_base_string=_as_bool("ZOOM_LTI_DEBUG_SIGNATURE_BASE_STRING", False),
         zoom_lti_signature_use_urlsafe_base64=_as_bool("ZOOM_LTI_SIGNATURE_USE_URLSAFE_BASE64", True),
         zoom_lti_signature_strip_padding=_as_bool("ZOOM_LTI_SIGNATURE_STRIP_PADDING", True),
