@@ -35,7 +35,8 @@ The script is designed for batch work and includes retries, timeout handling, pa
 - Zoom documents that LMS calendar creation is asynchronous, and the account owner or admin used for LTI calendar creation may need to launch LTI Pro in the course as the instructor before calendar items are visible.
 - The homepage replacement logic is string-based. The imported course homepage must contain the configured placeholders, and it should be a classic HTML page rather than a Canvas block-editor page.
 - The script is not fully idempotent for Zoom meetings. If you rerun it for the same course, it will create a new meeting unless you intervene manually.
-- Canvas does not provide a guaranteed universal admin toggle that forces `lti_context_id` to appear in every course API response. This tool first tries `include[]=lti_context_id`, then optionally reads `context.id` from an LTI 1.3 launch payload file, and only then falls back to the CSV `LTI Context ID` column.
+- Canvas does not provide a guaranteed universal admin toggle that forces `lti_context_id` to appear in every course API response. This tool first tries `include[]=lti_context_id`, then attempts a Canvas sessionless launch of the Zoom LTI tool to auto-generate the missing context ID, then optionally reads `context.id` from an LTI 1.3 launch payload file, and only then falls back to the CSV `LTI Context ID` column.
+- `ZOOM_LTI_TOOL_ID` is optional but recommended; when set, the script skips external-tool discovery and can trigger `lti_context_id` generation faster for brand-new course shells.
 
 ## Setup
 
@@ -56,6 +57,7 @@ CANVAS_API_TOKEN=replace_me
 ZOOM_LTI_KEY=replace_me
 ZOOM_LTI_SECRET=replace_me
 ZOOM_LTI_HOST_USER_ID=replace_me
+ZOOM_LTI_TOOL_ID=
 ZOOM_OAUTH_CLIENT_ID=replace_me
 ZOOM_OAUTH_CLIENT_SECRET=replace_me
 ZOOM_OAUTH_ACCOUNT_ID=replace_me
