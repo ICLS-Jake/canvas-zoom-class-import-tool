@@ -19,7 +19,7 @@ class UtilsTests(unittest.TestCase):
             "{{ZOOM_MEETING_LINK}}",
             "{{ZOOM_MEETING_PASSCODE}}",
         )
-        self.assertIn("https://zoom.example/j/123", updated)
+        self.assertIn('<a href="https://zoom.example/j/123">https://zoom.example/j/123</a>', updated)
         self.assertIn("abc123", updated)
 
     def test_build_meeting_plan_uses_first_matching_day(self) -> None:
