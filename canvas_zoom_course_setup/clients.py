@@ -13,8 +13,13 @@ import requests
 from .config import AppConfig
 from .errors import ApiError, AppError
 from .models import CanvasCourse, RoleSpec
-from .utils import build_lti_signature, build_lti_signature_base_string, summarize_migration_issues
-from .utils import build_lti_signature_digest, build_lti_signature_parts
+from .utils import (
+    build_lti_signature,
+    build_lti_signature_base_string,
+    build_lti_signature_digest,
+    build_lti_signature_parts,
+    summarize_migration_issues,
+)
 
 LOGGER = logging.getLogger(__name__)
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
@@ -207,7 +212,7 @@ class CanvasClient:
             domain = str(tool.get("domain") or "")
             lti_version = str(tool.get("lti_version") or "")
             normalized_haystack = f"{name} {url} {domain}".lower()
-            if "zoom" not in normalized_haystack and "zoom.us" not in normalized_haystack:
+            if "zoom" not in normalized_haystack:
                 continue
 
             score = 1

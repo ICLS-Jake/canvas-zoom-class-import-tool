@@ -5,9 +5,7 @@ import json
 import hashlib
 import hmac
 from html import escape
-from base64 import b64encode
-from base64 import urlsafe_b64decode
-from base64 import urlsafe_b64encode
+from base64 import b64encode, urlsafe_b64decode, urlsafe_b64encode
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
