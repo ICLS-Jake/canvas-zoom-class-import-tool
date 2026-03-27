@@ -6,7 +6,7 @@ import sys
 import threading
 import time
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 
 import requests
 
@@ -534,7 +534,7 @@ class ZoomClient:
         try:
             response = self.http.request(
                 "GET",
-                f"/users/{candidate}",
+                f"/users/{quote(candidate, safe='')}",
                 headers={"Authorization": f"Bearer {token}"},
             )
         except ApiError as exc:
