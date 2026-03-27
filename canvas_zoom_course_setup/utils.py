@@ -4,6 +4,7 @@ import copy
 import json
 import hashlib
 import hmac
+from html import escape
 from base64 import b64encode
 from base64 import urlsafe_b64decode
 from base64 import urlsafe_b64encode
@@ -72,7 +73,9 @@ def replace_homepage_placeholders(
     if link_placeholder:
         if link_placeholder not in updated:
             raise AppError("PGE001", f"Homepage link placeholder '{link_placeholder}' was not found.")
-        updated = updated.replace(link_placeholder, meeting_link)
+        safe_link = escape(meeting_link, quote=True)
+        hyperlink = f'<a href="{safe_link}">{safe_link}</a>'
+        updated = updated.replace(link_placeholder, hyperlink)
     if passcode_placeholder:
         if passcode_placeholder not in updated:
             raise AppError("PGE002", f"Homepage passcode placeholder '{passcode_placeholder}' was not found.")
