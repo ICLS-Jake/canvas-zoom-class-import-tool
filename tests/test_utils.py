@@ -6,7 +6,7 @@ from pathlib import Path
 
 from canvas_zoom_course_setup.config import AppConfig
 from canvas_zoom_course_setup.models import CanvasCourse, CourseShellRow
-from canvas_zoom_course_setup.utils import build_lti_signature, build_meeting_plan, replace_homepage_placeholders
+from canvas_zoom_course_setup.utils import build_lti_signature, build_meeting_plan, format_course_days, replace_homepage_placeholders
 
 
 class UtilsTests(unittest.TestCase):
@@ -22,6 +22,32 @@ class UtilsTests(unittest.TestCase):
         self.assertIn('<a href="https://zoom.example/j/123">https://zoom.example/j/123</a>', updated)
         self.assertIn("abc123", updated)
 
+    def test_replace_homepage_placeholders_schedule(self) -> None:
+        body = "<p>Join here: {{ZOOM_MEETING_LINK}}</p><p>Schedule: {{SCHEDULE}}</p>"
+        updated = replace_homepage_placeholders(
+            body,
+            "https://zoom.example/j/123",
+            "abc123",
+            "{{ZOOM_MEETING_LINK}}",
+            None,
+            schedule_url="https://example.edu/schedule",
+            schedule_placeholder="{{SCHEDULE}}",
+        )
+        self.assertIn('<a href="https://example.edu/schedule">Course Schedule</a>', updated)
+
+    def test_replace_homepage_placeholders_schedule_falls_back_when_no_url(self) -> None:
+        body = "<p>Join here: {{ZOOM_MEETING_LINK}}</p><p>Schedule: {{SCHEDULE}}</p>"
+        updated = replace_homepage_placeholders(
+            body,
+            "https://zoom.example/j/123",
+            "abc123",
+            "{{ZOOM_MEETING_LINK}}",
+            None,
+            schedule_url=None,
+            schedule_placeholder="{{SCHEDULE}}",
+        )
+        self.assertIn("{{SCHEDULE}}", updated)
+
     def test_build_meeting_plan_uses_first_matching_day(self) -> None:
         config = AppConfig(
             csv_file_path="canvas_zoom_import_courses.csv",
@@ -35,6 +61,9 @@ class UtilsTests(unittest.TestCase):
             canvas_coordinator_base_role_type="TeacherEnrollment",
             canvas_homepage_link_placeholder="{{ZOOM_MEETING_LINK}}",
             canvas_homepage_passcode_placeholder="{{ZOOM_MEETING_PASSCODE}}",
+            canvas_homepage_schedule_placeholder="{{SCHEDULE}}",
+            canvas_homepage_default_schedule_url=None,
+            canvas_homepage_course_days_placeholder="{{COURSE_DAYS}}",
             canvas_request_timeout_seconds=45,
             canvas_content_copy_timeout_minutes=30,
             canvas_poll_interval_seconds=10,
@@ -81,6 +110,29 @@ class UtilsTests(unittest.TestCase):
         self.assertEqual(plan.first_occurrence_at.date(), date(2026, 5, 6))
         self.assertEqual(plan.weekly_days, "2,4")
         self.assertEqual(plan.payload["topic"], "ENG-101 Live Class Session")
+
+    def test_replace_homepage_placeholders_course_days(self) -> None:
+        body = "<p>Meets: {{COURSE_DAYS}}</p>"
+        updated = replace_homepage_placeholders(
+            body,
+            "https://zoom.example/j/123",
+            "abc123",
+            None,
+            None,
+            course_days_text="Mondays and Wednesdays",
+            course_days_placeholder="{{COURSE_DAYS}}",
+        )
+        self.assertIn("Mondays and Wednesdays", updated)
+
+    def test_format_course_days_two_days(self) -> None:
+        self.assertEqual(format_course_days((0, 2)), "Mondays and Wednesdays")
+        self.assertEqual(format_course_days((1, 3)), "Tuesdays and Thursdays")
+
+    def test_format_course_days_one_day(self) -> None:
+        self.assertEqual(format_course_days((4,)), "Fridays")
+
+    def test_format_course_days_three_days(self) -> None:
+        self.assertEqual(format_course_days((0, 2, 4)), "Mondays, Wednesdays, and Fridays")
 
     def test_lti_signature_is_url_safe(self) -> None:
         signature = build_lti_signature("secret", [("key", "abc"), ("timestamp", "123"), ("userId", "teacher@example.edu")])

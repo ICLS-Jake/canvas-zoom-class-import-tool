@@ -27,6 +27,7 @@ FIELD_ALIASES = {
     "lti_context_id": {"lti context id", "lti_context_id", "context id"},
     "meeting_topic": {"meeting topic", "meeting_topic", "topic"},
     "zoom_host_user_id": {"zoom host user id", "zoom_host_user_id", "host user id"},
+    "schedule_url": {"schedule", "schedule url", "schedule_url", "course schedule url", "course schedule link"},
 }
 
 WEEKDAY_ALIASES = {
@@ -95,6 +96,7 @@ def load_course_rows(csv_path: Path) -> list[CourseShellRow]:
                     lti_context_id=_blank_to_none(_field(normalized, "lti_context_id")),
                     meeting_topic=_blank_to_none(_field(normalized, "meeting_topic")),
                     zoom_host_user_id=_blank_to_none(_field(normalized, "zoom_host_user_id")),
+                    schedule_url=_blank_to_none(_field(normalized, "schedule_url")),
                     raw_values=normalized,
                 )
             )

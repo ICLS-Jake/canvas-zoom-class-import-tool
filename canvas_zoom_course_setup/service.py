@@ -13,6 +13,7 @@ from .models import CanvasCourse, CourseResult, CourseShellRow
 from .utils import (
     build_meeting_plan,
     extract_lti_context_id_from_launch_payload_text,
+    format_course_days,
     replace_homepage_placeholders,
     summarize_migration_issues,
 )
@@ -27,10 +28,10 @@ class CourseShellSetupService:
         self.zoom = ZoomClient(config)
         self.zoom_lti = ZoomLTIClient(config)
 
-    def run(self, rows: list[CourseShellRow], *, workers: int, dry_run: bool, zoom_only: bool = False) -> list[CourseResult]:
+    def run(self, rows: list[CourseShellRow], *, workers: int, dry_run: bool, zoom_only: bool = False, canvas_only: bool = False) -> list[CourseResult]:
         results: list[CourseResult] = []
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="course-shell") as executor:
-            future_map = {executor.submit(self.process_row, row, dry_run, zoom_only): row for row in rows}
+            future_map = {executor.submit(self.process_row, row, dry_run, zoom_only, canvas_only): row for row in rows}
             for future in as_completed(future_map):
                 row = future_map[future]
                 try:
@@ -59,23 +60,29 @@ class CourseShellSetupService:
                 results.append(result)
         return sorted(results, key=lambda item: item.row_number)
 
-    def process_row(self, row: CourseShellRow, dry_run: bool, zoom_only: bool = False) -> CourseResult:
+    def process_row(self, row: CourseShellRow, dry_run: bool, zoom_only: bool = False, canvas_only: bool = False) -> CourseResult:
         started_at = time.perf_counter()
         live_course = self.canvas.get_course(row.live_course_id, include_lti_context_id=True)
         master_course = self.canvas.get_course(row.master_course_id, include_lti_context_id=False)
         role = None if zoom_only else self.canvas.resolve_coordinator_role()
-        lti_context_id = self._resolve_lti_context_id(live_course, row)
-        if not lti_context_id:
-            raise AppError(
-                "ZLTCTX",
-                f"Course {live_course.canvas_id} does not have an LTI context ID available from Canvas course data, launch payload fallback, or CSV override.",
-            )
 
-        meeting_plan = build_meeting_plan(row, live_course, self.config)
+        if not canvas_only:
+            lti_context_id = self._resolve_lti_context_id(live_course, row)
+            if not lti_context_id:
+                raise AppError(
+                    "ZLTCTX",
+                    f"Course {live_course.canvas_id} does not have an LTI context ID available from Canvas course data, launch payload fallback, or CSV override.",
+                )
+            meeting_plan = build_meeting_plan(row, live_course, self.config)
 
         if dry_run:
             elapsed = time.perf_counter() - started_at
-            if zoom_only:
+            if canvas_only:
+                warning_text = (
+                    f"Would copy content, enroll {len(row.coordinator_user_ids)} coordinator(s), and update homepage placeholders with a dummy Zoom link (--canvas-only)."
+                    " Zoom meeting creation would be skipped."
+                )
+            elif zoom_only:
                 warning_text = (
                     f"Would create Zoom meeting starting {meeting_plan.first_occurrence_at.isoformat()} and update homepage placeholders."
                     " Canvas content copy and coordinator enrollment would be skipped (--zoom-only)."
@@ -119,26 +126,34 @@ class CourseShellSetupService:
             )
             warnings = summarize_migration_issues(issues)
 
-        configured_host = row.zoom_host_user_id or self.config.zoom_lti_host_user_id
-        resolved_host_user_id = self.zoom.resolve_lti_host_user_id(configured_host)
-        meeting_id = self.zoom_lti.create_and_associate(
-            host_user_id=resolved_host_user_id,
-            context_id=lti_context_id,
-            domain=self.config.canvas_domain,
-            course_id=live_course.canvas_id,
-            meeting_info=meeting_plan.payload,
-        )
-        meeting = self.zoom.get_meeting(meeting_id)
-        join_url = str(meeting.get("join_url", "")).strip()
-        passcode = str(meeting.get("password", "")).strip()
-        if not join_url:
-            raise AppError("ZOM406", f"Zoom meeting {meeting_id} did not include a join URL.", details={"meeting_id": meeting_id})
-        if not passcode:
-            raise AppError(
-                "ZOM407",
-                f"Zoom meeting {meeting_id} did not include a passcode. Check the account's meeting passcode settings.",
-                details={"meeting_id": meeting_id},
+        if canvas_only:
+            LOGGER.info("Row %s: skipping Zoom meeting creation (--canvas-only). Using dummy join URL and passcode.", row.row_number)
+            meeting_id = ""
+            join_url = "https://zoom.example.com/canvas-only-test"
+            passcode = "canvas-only"
+            zoom_skip_note = "Skipped Zoom meeting creation (--canvas-only). Dummy link and passcode used."
+            warnings = f"{warnings} {zoom_skip_note}".strip() if warnings else zoom_skip_note
+        else:
+            configured_host = row.zoom_host_user_id or self.config.zoom_lti_host_user_id
+            resolved_host_user_id = self.zoom.resolve_lti_host_user_id(configured_host)
+            meeting_id = self.zoom_lti.create_and_associate(
+                host_user_id=resolved_host_user_id,
+                context_id=lti_context_id,
+                domain=self.config.canvas_domain,
+                course_id=live_course.canvas_id,
+                meeting_info=meeting_plan.payload,
             )
+            meeting = self.zoom.get_meeting(meeting_id)
+            join_url = str(meeting.get("join_url", "")).strip()
+            passcode = str(meeting.get("password", "")).strip()
+            if not join_url:
+                raise AppError("ZOM406", f"Zoom meeting {meeting_id} did not include a join URL.", details={"meeting_id": meeting_id})
+            if not passcode:
+                raise AppError(
+                    "ZOM407",
+                    f"Zoom meeting {meeting_id} did not include a passcode. Check the account's meeting passcode settings.",
+                    details={"meeting_id": meeting_id},
+                )
 
         front_page = self.canvas.get_front_page(live_course.canvas_id)
         if front_page.get("editor") == "block_editor":
@@ -147,12 +162,17 @@ class CourseShellSetupService:
                 f"Course {live_course.canvas_id} uses a block editor front page. The placeholder replacement flow expects classic HTML page content.",
                 details={"meeting_id": meeting_id},
             )
+        schedule_url = row.schedule_url or self.config.canvas_homepage_default_schedule_url
         updated_body = replace_homepage_placeholders(
             str(front_page.get("body") or ""),
             join_url,
             passcode,
             self.config.canvas_homepage_link_placeholder,
             self.config.canvas_homepage_passcode_placeholder,
+            schedule_url=schedule_url,
+            schedule_placeholder=self.config.canvas_homepage_schedule_placeholder,
+            course_days_text=format_course_days(row.course_days),
+            course_days_placeholder=self.config.canvas_homepage_course_days_placeholder,
         )
         self.canvas.update_front_page(live_course.canvas_id, updated_body)
 

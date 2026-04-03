@@ -23,6 +23,16 @@ ZOOM_WEEKDAY_MAP = {
     6: "1",  # Sunday
 }
 
+WEEKDAY_PLURAL_NAMES = {
+    0: "Mondays",
+    1: "Tuesdays",
+    2: "Wednesdays",
+    3: "Thursdays",
+    4: "Fridays",
+    5: "Saturdays",
+    6: "Sundays",
+}
+
 
 def build_meeting_plan(row: CourseShellRow, course: CanvasCourse, config: AppConfig) -> MeetingPlan:
     timezone_name = row.meeting_timezone or config.default_meeting_timezone
@@ -66,6 +76,10 @@ def replace_homepage_placeholders(
     passcode: str,
     link_placeholder: str | None,
     passcode_placeholder: str | None,
+    schedule_url: str | None = None,
+    schedule_placeholder: str | None = None,
+    course_days_text: str | None = None,
+    course_days_placeholder: str | None = None,
 ) -> str:
     updated = body
     if link_placeholder:
@@ -78,7 +92,25 @@ def replace_homepage_placeholders(
         if passcode_placeholder not in updated:
             raise AppError("PGE002", f"Homepage passcode placeholder '{passcode_placeholder}' was not found.")
         updated = updated.replace(passcode_placeholder, passcode)
+    if schedule_placeholder and schedule_url:
+        if schedule_placeholder not in updated:
+            raise AppError("PGE003", f"Homepage schedule placeholder '{schedule_placeholder}' was not found.")
+        safe_url = escape(schedule_url, quote=True)
+        updated = updated.replace(schedule_placeholder, f'<a href="{safe_url}">Course Schedule</a>')
+    if course_days_placeholder and course_days_text:
+        if course_days_placeholder not in updated:
+            raise AppError("PGE004", f"Homepage course days placeholder '{course_days_placeholder}' was not found.")
+        updated = updated.replace(course_days_placeholder, course_days_text)
     return updated
+
+
+def format_course_days(weekdays: tuple[int, ...]) -> str:
+    names = [WEEKDAY_PLURAL_NAMES[day] for day in weekdays]
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
+    return ", ".join(names[:-1]) + f", and {names[-1]}"
 
 
 def build_lti_signature(

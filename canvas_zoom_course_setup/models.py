@@ -36,6 +36,7 @@ class CourseShellRow:
     lti_context_id: str | None = None
     meeting_topic: str | None = None
     zoom_host_user_id: str | None = None
+    schedule_url: str | None = None
     raw_values: dict[str, str] = field(default_factory=dict)
 
 

@@ -24,10 +24,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workers", type=int, help="Override the number of worker threads.")
     parser.add_argument("--report-path", help="Optional explicit CSV report path.")
     parser.add_argument("--dry-run", action="store_true", help="Validate configuration and inputs without writing changes.")
-    parser.add_argument(
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
         "--zoom-only",
         action="store_true",
         help="Skip Canvas content import and coordinator enrollment. This is useful for quickly testing only the Zoom/LTI + homepage update flow.",
+    )
+    mode_group.add_argument(
+        "--canvas-only",
+        action="store_true",
+        help="Skip Zoom meeting creation and use a dummy meeting link and passcode instead. Useful for testing the Canvas content copy, enrollment, and homepage update flow without Zoom credentials.",
     )
     parser.add_argument(
         "--log-level",
@@ -57,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         service = CourseShellSetupService(config)
-        results = service.run(rows, workers=workers, dry_run=args.dry_run, zoom_only=args.zoom_only)
+        results = service.run(rows, workers=workers, dry_run=args.dry_run, zoom_only=args.zoom_only, canvas_only=args.canvas_only)
         write_report(report_path, results)
 
         success_count = sum(1 for result in results if result.status == "success")

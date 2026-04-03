@@ -41,6 +41,9 @@ class AppConfig:
     canvas_coordinator_base_role_type: str
     canvas_homepage_link_placeholder: str | None
     canvas_homepage_passcode_placeholder: str | None
+    canvas_homepage_schedule_placeholder: str | None
+    canvas_homepage_default_schedule_url: str | None
+    canvas_homepage_course_days_placeholder: str | None
     canvas_request_timeout_seconds: float
     canvas_content_copy_timeout_minutes: float
     canvas_poll_interval_seconds: float
@@ -123,6 +126,13 @@ def load_config(env_file: Path | None) -> AppConfig:
         ),
         canvas_homepage_passcode_placeholder=_blank_to_none(
             _optional("CANVAS_HOMEPAGE_PASSCODE_PLACEHOLDER", "{{ZOOM_MEETING_PASSCODE}}")
+        ),
+        canvas_homepage_schedule_placeholder=_blank_to_none(
+            _optional("CANVAS_HOMEPAGE_SCHEDULE_PLACEHOLDER", "{{SCHEDULE}}")
+        ),
+        canvas_homepage_default_schedule_url=_blank_to_none(_optional("CANVAS_HOMEPAGE_DEFAULT_SCHEDULE_URL")),
+        canvas_homepage_course_days_placeholder=_blank_to_none(
+            _optional("CANVAS_HOMEPAGE_COURSE_DAYS_PLACEHOLDER", "{{COURSE_DAYS}}")
         ),
         canvas_request_timeout_seconds=_as_float("CANVAS_REQUEST_TIMEOUT_SECONDS", 45.0, minimum=1.0),
         canvas_content_copy_timeout_minutes=_as_float("CANVAS_CONTENT_COPY_TIMEOUT_MINUTES", 30.0, minimum=1.0),
