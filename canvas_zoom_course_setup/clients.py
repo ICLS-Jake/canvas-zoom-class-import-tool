@@ -502,6 +502,8 @@ class ZoomClient:
         self._token_expires_at: float = 0.0
         self._user_id_cache_lock = threading.Lock()
         self._user_id_cache: dict[str, str] = {}
+        self._user_info_cache_lock = threading.Lock()
+        self._user_info_cache: dict[str, dict[str, str]] = {}
 
     def get_meeting(self, meeting_id: str) -> dict[str, Any]:
         token = self._access_token()
@@ -551,6 +553,38 @@ class ZoomClient:
             self._user_id_cache[candidate.lower()] = user_id
         LOGGER.info("Zoom LTI host source: resolved from email (%s).", candidate)
         return user_id
+
+    def get_zoom_user_info(self, user_id_or_email: str) -> dict[str, str]:
+        cache_key = user_id_or_email.strip().lower()
+
+        with self._user_info_cache_lock:
+            cached = self._user_info_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        token = self._access_token()
+        try:
+            response = self.http.request(
+                "GET",
+                f"/users/{quote(user_id_or_email.strip(), safe='')}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        except ApiError as exc:
+            if exc.status_code == 404:
+                raise AppError("ZOM413", f"Zoom user '{user_id_or_email}' could not be found.", cause=exc) from exc
+            raise AppError("ZOM414", f"Could not look up Zoom user '{user_id_or_email}'.", cause=exc) from exc
+
+        payload = _require_dict(_safe_json(response), "ZOM415", "Zoom user info response was not an object.")
+        info: dict[str, str] = {
+            "first_name": str(payload.get("first_name", "")).strip(),
+            "last_name": str(payload.get("last_name", "")).strip(),
+            "display_name": str(payload.get("display_name", "")).strip(),
+            "email": str(payload.get("email", "")).strip(),
+        }
+
+        with self._user_info_cache_lock:
+            self._user_info_cache[cache_key] = info
+        return info
 
     def _access_token(self) -> str:
         with self._token_lock:

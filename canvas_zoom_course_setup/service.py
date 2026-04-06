@@ -15,6 +15,8 @@ from .utils import (
     extract_lti_context_id_from_launch_payload_text,
     format_course_days,
     replace_homepage_placeholders,
+    replace_teacher_placeholders,
+    strip_nbsp_after_instructor_heading,
     summarize_migration_issues,
 )
 
@@ -28,10 +30,10 @@ class CourseShellSetupService:
         self.zoom = ZoomClient(config)
         self.zoom_lti = ZoomLTIClient(config)
 
-    def run(self, rows: list[CourseShellRow], *, workers: int, dry_run: bool, zoom_only: bool = False, canvas_only: bool = False) -> list[CourseResult]:
+    def run(self, rows: list[CourseShellRow], *, workers: int, dry_run: bool, zoom_only: bool = False, canvas_only: bool = False, no_meeting: bool = False) -> list[CourseResult]:
         results: list[CourseResult] = []
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="course-shell") as executor:
-            future_map = {executor.submit(self.process_row, row, dry_run, zoom_only, canvas_only): row for row in rows}
+            future_map = {executor.submit(self.process_row, row, dry_run, zoom_only, canvas_only, no_meeting): row for row in rows}
             for future in as_completed(future_map):
                 row = future_map[future]
                 try:
@@ -60,13 +62,15 @@ class CourseShellSetupService:
                 results.append(result)
         return sorted(results, key=lambda item: item.row_number)
 
-    def process_row(self, row: CourseShellRow, dry_run: bool, zoom_only: bool = False, canvas_only: bool = False) -> CourseResult:
+    def process_row(self, row: CourseShellRow, dry_run: bool, zoom_only: bool = False, canvas_only: bool = False, no_meeting: bool = False) -> CourseResult:
         started_at = time.perf_counter()
+        # --no-meeting behaves like --canvas-only for meeting creation but still allows Zoom API calls for teacher info
+        effective_canvas_only = canvas_only or no_meeting
         live_course = self.canvas.get_course(row.live_course_id, include_lti_context_id=True)
         master_course = self.canvas.get_course(row.master_course_id, include_lti_context_id=False)
         role = None if zoom_only else self.canvas.resolve_coordinator_role()
 
-        if not canvas_only:
+        if not effective_canvas_only:
             lti_context_id = self._resolve_lti_context_id(live_course, row)
             if not lti_context_id:
                 raise AppError(
@@ -77,7 +81,12 @@ class CourseShellSetupService:
 
         if dry_run:
             elapsed = time.perf_counter() - started_at
-            if canvas_only:
+            if no_meeting:
+                warning_text = (
+                    f"Would copy content, enroll {len(row.coordinator_user_ids)} coordinator(s), and update homepage placeholders with a dummy Zoom link (--no-meeting)."
+                    " Zoom meeting creation would be skipped. Zoom API would still be queried for teacher info."
+                )
+            elif canvas_only:
                 warning_text = (
                     f"Would copy content, enroll {len(row.coordinator_user_ids)} coordinator(s), and update homepage placeholders with a dummy Zoom link (--canvas-only)."
                     " Zoom meeting creation would be skipped."
@@ -126,12 +135,13 @@ class CourseShellSetupService:
             )
             warnings = summarize_migration_issues(issues)
 
-        if canvas_only:
-            LOGGER.info("Row %s: skipping Zoom meeting creation (--canvas-only). Using dummy join URL and passcode.", row.row_number)
+        if effective_canvas_only:
+            flag_name = "--no-meeting" if no_meeting else "--canvas-only"
+            LOGGER.info("Row %s: skipping Zoom meeting creation (%s). Using dummy join URL and passcode.", row.row_number, flag_name)
             meeting_id = ""
             join_url = "https://zoom.example.com/canvas-only-test"
             passcode = "canvas-only"
-            zoom_skip_note = "Skipped Zoom meeting creation (--canvas-only). Dummy link and passcode used."
+            zoom_skip_note = f"Skipped Zoom meeting creation ({flag_name}). Dummy link and passcode used."
             warnings = f"{warnings} {zoom_skip_note}".strip() if warnings else zoom_skip_note
         else:
             configured_host = row.zoom_host_user_id or self.config.zoom_lti_host_user_id
@@ -174,6 +184,35 @@ class CourseShellSetupService:
             course_days_text=format_course_days(row.course_days),
             course_days_placeholder=self.config.canvas_homepage_course_days_placeholder,
         )
+        # Resolve teacher info from CSV zoom_host_user_id only (never env default).
+        # Zoom API is allowed for --no-meeting but skipped for plain --canvas-only.
+        zoom_user_info: dict[str, str] = {}
+        if row.zoom_host_user_id and (not effective_canvas_only or no_meeting):
+            try:
+                zoom_user_info = self.zoom.get_zoom_user_info(row.zoom_host_user_id)
+            except AppError as exc:
+                LOGGER.warning("Row %s: could not fetch Zoom user info for teacher placeholders: %s", row.row_number, exc)
+
+        teacher_name: str | None = row.teacher_name
+        if not teacher_name and zoom_user_info:
+            teacher_name = zoom_user_info.get("display_name") or None
+
+        teacher_shortname: str | None = row.teacher_shortname
+        if not teacher_shortname:
+            source_name = row.teacher_name or (zoom_user_info.get("display_name") if zoom_user_info else None)
+            if source_name:
+                teacher_shortname = source_name.split()[0]
+
+        teacher_email: str | None = None
+        if row.zoom_host_user_id:
+            if "@" in row.zoom_host_user_id:
+                teacher_email = row.zoom_host_user_id.strip()
+            elif zoom_user_info:
+                teacher_email = zoom_user_info.get("email") or None
+
+        updated_body = replace_teacher_placeholders(updated_body, teacher_name, teacher_shortname, teacher_email)
+        updated_body = strip_nbsp_after_instructor_heading(updated_body)
+
         self.canvas.update_front_page(live_course.canvas_id, updated_body)
 
         elapsed = time.perf_counter() - started_at

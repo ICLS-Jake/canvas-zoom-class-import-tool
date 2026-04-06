@@ -6,7 +6,7 @@ from pathlib import Path
 
 from canvas_zoom_course_setup.config import AppConfig
 from canvas_zoom_course_setup.models import CanvasCourse, CourseShellRow
-from canvas_zoom_course_setup.utils import build_lti_signature, build_meeting_plan, format_course_days, replace_homepage_placeholders
+from canvas_zoom_course_setup.utils import build_lti_signature, build_meeting_plan, format_course_days, replace_homepage_placeholders, strip_nbsp_after_instructor_heading
 
 
 class UtilsTests(unittest.TestCase):
@@ -133,6 +133,21 @@ class UtilsTests(unittest.TestCase):
 
     def test_format_course_days_three_days(self) -> None:
         self.assertEqual(format_course_days((0, 2, 4)), "Mondays, Wednesdays, and Fridays")
+
+    def test_strip_nbsp_after_instructor_heading_removes_trailing_span(self) -> None:
+        body = (
+            '<h2><span style="font-size: 24pt;">Instructor and Contact Information</span>'
+            '<span style="font-family: inherit; font-size: 1.8em;">&nbsp; &nbsp; &nbsp;</span></h2>'
+            '<p>My name is Test.</p>'
+        )
+        result = strip_nbsp_after_instructor_heading(body)
+        self.assertNotIn('<span style="font-family: inherit; font-size: 1.8em;">', result)
+        self.assertIn('Instructor and Contact Information</span></h2>', result)
+        self.assertIn('<p>My name is Test.</p>', result)
+
+    def test_strip_nbsp_after_instructor_heading_noop_when_absent(self) -> None:
+        body = '<h2><span>Instructor and Contact Information</span></h2><p>Content.</p>'
+        self.assertEqual(strip_nbsp_after_instructor_heading(body), body)
 
     def test_lti_signature_is_url_safe(self) -> None:
         signature = build_lti_signature("secret", [("key", "abc"), ("timestamp", "123"), ("userId", "teacher@example.edu")])

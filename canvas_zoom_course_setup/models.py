@@ -37,6 +37,8 @@ class CourseShellRow:
     meeting_topic: str | None = None
     zoom_host_user_id: str | None = None
     schedule_url: str | None = None
+    teacher_name: str | None = None
+    teacher_shortname: str | None = None
     raw_values: dict[str, str] = field(default_factory=dict)
 
 

@@ -28,6 +28,8 @@ FIELD_ALIASES = {
     "meeting_topic": {"meeting topic", "meeting_topic", "topic"},
     "zoom_host_user_id": {"zoom host user id", "zoom_host_user_id", "host user id"},
     "schedule_url": {"schedule", "schedule url", "schedule_url", "course schedule url", "course schedule link"},
+    "teacher_name": {"teacher name", "teacher_name"},
+    "teacher_shortname": {"teacher shortname", "teacher_shortname", "teacher short name"},
 }
 
 WEEKDAY_ALIASES = {
@@ -97,6 +99,8 @@ def load_course_rows(csv_path: Path) -> list[CourseShellRow]:
                     meeting_topic=_blank_to_none(_field(normalized, "meeting_topic")),
                     zoom_host_user_id=_blank_to_none(_field(normalized, "zoom_host_user_id")),
                     schedule_url=_blank_to_none(_field(normalized, "schedule_url")),
+                    teacher_name=_blank_to_none(_field(normalized, "teacher_name")),
+                    teacher_shortname=_blank_to_none(_field(normalized, "teacher_shortname")),
                     raw_values=normalized,
                 )
             )

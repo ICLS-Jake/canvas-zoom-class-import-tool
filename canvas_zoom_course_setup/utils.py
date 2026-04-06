@@ -4,6 +4,7 @@ import copy
 import json
 import hashlib
 import hmac
+import re
 from html import escape
 from base64 import b64encode, urlsafe_b64decode, urlsafe_b64encode
 from datetime import UTC, date, datetime, time, timedelta
@@ -102,6 +103,57 @@ def replace_homepage_placeholders(
             raise AppError("PGE004", f"Homepage course days placeholder '{course_days_placeholder}' was not found.")
         updated = updated.replace(course_days_placeholder, course_days_text)
     return updated
+
+
+def replace_teacher_placeholders(
+    body: str,
+    teacher_name: str | None,
+    teacher_shortname: str | None,
+    teacher_email: str | None,
+) -> str:
+    _TEACHER_NAME_PH = "{{TEACHER_NAME}}"
+    _TEACHER_NAME_SHORT_PH = "{{TEACHER_NAME_SHORT}}"
+    _TEACHER_EMAIL_PH = "{{TEACHER_EMAIL}}"
+
+    updated = body
+
+    if teacher_name is None:
+        print(f"  Skipping {_TEACHER_NAME_PH}: no value available.")
+    elif _TEACHER_NAME_PH not in updated:
+        print(f"  Skipping {_TEACHER_NAME_PH}: placeholder not found in page.")
+    else:
+        updated = updated.replace(_TEACHER_NAME_PH, teacher_name)
+        print(f"  Replacing {_TEACHER_NAME_PH} with: {teacher_name}")
+
+    if teacher_shortname is None:
+        print(f"  Skipping {_TEACHER_NAME_SHORT_PH}: no value available.")
+    elif _TEACHER_NAME_SHORT_PH not in updated:
+        print(f"  Skipping {_TEACHER_NAME_SHORT_PH}: placeholder not found in page.")
+    else:
+        updated = updated.replace(_TEACHER_NAME_SHORT_PH, teacher_shortname)
+        print(f"  Replacing {_TEACHER_NAME_SHORT_PH} with: {teacher_shortname}")
+
+    if teacher_email is None:
+        print(f"  Skipping {_TEACHER_EMAIL_PH}: no value available.")
+    elif _TEACHER_EMAIL_PH not in updated:
+        print(f"  Skipping {_TEACHER_EMAIL_PH}: placeholder not found in page.")
+    else:
+        safe_email = escape(teacher_email, quote=True)
+        email_link = f'<a href="mailto:{safe_email}">{safe_email}</a>'
+        updated = updated.replace(_TEACHER_EMAIL_PH, email_link)
+        print(f"  Replacing {_TEACHER_EMAIL_PH} with: {teacher_email}")
+
+    return updated
+
+
+def strip_nbsp_after_instructor_heading(body: str) -> str:
+    """Remove the trailing &nbsp;-only <span> Canvas inserts inside the Instructor and Contact Information heading."""
+    return re.sub(
+        r'(Instructor and Contact Information</span>)\s*<span[^>]*>(?:\s*&nbsp;\s*)+</span>',
+        r'\1',
+        body,
+        flags=re.IGNORECASE,
+    )
 
 
 def format_course_days(weekdays: tuple[int, ...]) -> str:

@@ -35,6 +35,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Skip Zoom meeting creation and use a dummy meeting link and passcode instead. Useful for testing the Canvas content copy, enrollment, and homepage update flow without Zoom credentials.",
     )
+    mode_group.add_argument(
+        "--no-meeting",
+        action="store_true",
+        help="Like --canvas-only, but still queries the Zoom API to look up teacher name and email for homepage placeholder replacement. Zoom meeting creation is skipped and a dummy link and passcode are used.",
+    )
     parser.add_argument(
         "--log-level",
         default="INFO",
@@ -63,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         service = CourseShellSetupService(config)
-        results = service.run(rows, workers=workers, dry_run=args.dry_run, zoom_only=args.zoom_only, canvas_only=args.canvas_only)
+        results = service.run(rows, workers=workers, dry_run=args.dry_run, zoom_only=args.zoom_only, canvas_only=args.canvas_only, no_meeting=args.no_meeting)
         write_report(report_path, results)
 
         success_count = sum(1 for result in results if result.status == "success")
